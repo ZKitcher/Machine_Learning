@@ -396,7 +396,7 @@ class Matrix {
                 for (let i = 0; i < result.rows; i++) {
                     for (let j = 0; j < result.cols; j++) {
                         let ran = rand(0, 1);
-                        result.matrix[i][j] =  ran < 0.5 ? a.matrix[i][j] : b.matrix[i][j];
+                        result.matrix[i][j] = ran < 0.5 ? a.matrix[i][j] : b.matrix[i][j];
                     }
                 }
                 return result;
@@ -491,6 +491,46 @@ class Matrix {
     };
 }
 
+const normalizeData = (data, min, max) => {
+    if (min === undefined || max === undefined) {
+        min = min(data);
+        max = max(data);
+    }
+    data.forEach(e => {
+        e = (e - min) / (max - min);
+    })
+}
+
+const max = (arr) => {
+    let record = 0;
+    let len = arr.length;
+    for (let i = 0; i < len; i++) {
+        if (arr[i] > record) {
+            record = arr[i];
+        }
+    }
+    return record;
+}
+
+const min = (arr) => {
+    let record = Infinity;
+    let len = arr.length;
+    for (let i = 0; i < len; i++) {
+        if (arr[i] < record) {
+            record = arr[i];
+        }
+    }
+    return record;
+}
+
+const avg = (arr) => {
+    let sum = 0;
+    let len = arr.length;
+    for (let i = 0; i < len; i++) {
+        sum += arr[i];
+    }
+    return sum / len;
+}
 
 const lossfuncs = {
     mae(predictions, target) {

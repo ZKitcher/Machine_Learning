@@ -42,13 +42,13 @@ const LayerType = {
 // { Number } Stride The number of jumps the sample is going to perform for each iteration.
 
 class Layer {
-    constructor(type, size, arg2, arg3, arg4, arg5) {
+    constructor(type, size, activationFunc, arg3, arg4, arg5) {
         this.type = type;
         this.subtype = this.getSubtype();
         if (this.subtype !== LayerType.pool) {
             if (this.type === LayerType.hidden || this.type === LayerType.output) {
                 this.size = size;
-                this.setFunc(arg2);
+                this.setFunc(activationFunc);
                 this.layer = new Matrix(this.size, 1);
             } else if (this.type === LayerType.input) {
                 this.size = size;
@@ -57,7 +57,7 @@ class Layer {
         } else if (this.subtype === LayerType.pool) {
             // Pooling Layers
             this.stride = arg3;
-            this.sampleSize = arg2;
+            this.sampleSize = activationFunc;
             this.inputSize = size;
 
             if (arg4 !== undefined && arg5 !== undefined) {
@@ -105,7 +105,6 @@ class Layer {
                 return output;
             };
         } else {
-            // Handle Unvalid Layer types.
             if (typeof this.type === 'string') {
                 NetworkError.error(`The Layer type '${this.type}' is not valid.`, 'Layer.constructor');
             } else {
