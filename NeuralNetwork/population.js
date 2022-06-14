@@ -24,35 +24,42 @@ class Population {
 
     evaluate() {
         let maxFitness = 0;
+        let minFitness = Infinity;
         let bestAgent;
+        this.matingPool = [];
 
         this.agents.forEach(e => {
             if (e.fitness > maxFitness) {
                 maxFitness = e.fitness;
                 bestAgent = e;
             }
+
+            if (e.fitness < minFitness) minFitness = e.fitness;
         })
 
-        this.agents.forEach(e => e.fitness /= maxFitness);
+
+        this.agents.forEach(e => {
+            e.fitness = ((e.fitness - minFitness) / (maxFitness - minFitness)) * 10;
+
+            // let n = e.completed || e === best ? e.fitness * 10 : e.fitness * 5
+            // let n = e.completed || e === bestAgent ? e.fitness * 2 : e.fitness
+            let n = e.completed ? e.fitness * 2 : e.fitness
+
+            for (let i = 0; i < n; i++) {
+                this.matingPool.push(e);
+            }
+
+        });
+
         this.selection(bestAgent)
     }
 
     selection(best) {
         let newPopulation = [];
-        this.matingPool = [];
 
         if (best.completed && typeof completedGeneration !== 'undefined') {
             completedGeneration(best)
         }
-
-        this.agents.forEach(e => {
-            // let n = e.completed || e === best ? e.fitness * 10 : e.fitness * 5
-            let n = e.completed ? e.fitness * 20 : e.fitness
-
-            for (let i = 0; i < n; i++) {
-                this.matingPool.push(e);
-            }
-        });
 
         this.agents.forEach(e => {
             let newBrain = NeuralNetwork
@@ -104,7 +111,7 @@ class MLObject {
         }
         this.failed = false;
         this.completed = false;
-        this.fitness;
         this.bestGenes = false;
+        this.fitness;
     }
 }
