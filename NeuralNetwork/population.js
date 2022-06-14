@@ -8,6 +8,8 @@ class Population {
         this.mutationRate = mutationRate;
         this.constructor = constructor;
 
+        this.bestAgent = null
+
         for (let i = 0; i < this.popSize; i++) {
             this.agents.push(new this.constructor())
         }
@@ -51,14 +53,15 @@ class Population {
 
         });
 
-        this.selection(bestAgent)
+        this.bestAgent = bestAgent
+        this.selection()
     }
 
-    selection(best) {
+    selection() {
         let newPopulation = [];
 
-        if (best.completed && typeof completedGeneration !== 'undefined') {
-            completedGeneration(best)
+        if (this.bestAgent.completed && typeof completedGeneration !== 'undefined') {
+            completedGeneration(this.bestAgent)
         }
 
         this.agents.forEach(e => {
@@ -70,7 +73,7 @@ class Population {
             newBrain.mutateRandom(newBrain.learningRate, this.mutationRate);
 
             let nextGen = new this.constructor(newBrain);
-            if (e === best) nextGen.bestGenes = true;
+            if (e === this.bestAgent) nextGen.bestGenes = true;
             newPopulation.push(nextGen);
         });
 
@@ -95,6 +98,10 @@ class Population {
         push();
         fill(255, 255, 255);
         text(this.generation, 10, 15);
+
+        if (this.bestAgent)
+            this.bestAgent.brain.show()
+
         pop();
     }
 }
@@ -111,6 +118,7 @@ class MLObject {
         }
         this.failed = false;
         this.completed = false;
+        this.done = false;
         this.bestGenes = false;
         this.fitness;
     }
