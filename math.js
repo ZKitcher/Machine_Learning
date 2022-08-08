@@ -1,13 +1,29 @@
-const rand = (a, b) => Math.random(1) * (b - a) + a;
-const exp = (x) => Math.exp(x);
-const abs = (x) => Math.abs(x);
-const log = (x) => Math.log(x);
+const rand = (a, b) => a === undefined ? Math.random() : a instanceof Array ? a[floor(rand(a.length))] : b === undefined ? Math.random(1) * a : Math.random(1) * (b - a) + a;
+const exp = x => Math.exp(x);
+const abs = x => Math.abs(x);
+const log = x => Math.log(x);
 const pow = (x, e) => Math.pow(x, e);
-const round = (x) => Math.round(x);
-const sqrt = (x) => Math.sqrt(x);
-const cosh = (x) => (exp(x) + exp(-x)) / 2;
-const floor = (x) => Math.floor(x);
-const isNumber = (x) => typeof x === 'number';
+const round = x => Math.round(x);
+const sqrt = x => Math.sqrt(x);
+const cosh = x => (exp(x) + exp(-x)) / 2;
+const floor = x => Math.floor(x);
+const cos = x => Math.cos(x);
+const sin = x => Math.sin(x);
+const max = (...arg) => Math.max(...arg);
+const min = (...arg) => Math.min(...arg);
+const PI = Math.PI;
+const isNumber = x => typeof x === 'number';
+const between = (num, minN, maxN) => Math.min(Math.max(num, minN), maxN);
+const clog = (...arg) => console.log(...arg);
+const boxMuller = () => Math.sqrt(-1 * log(rand())) * cos(1 * PI * rand());
+const distanceBetweenPoints = (x1, y1, x2, y2) => sqrt(pow((x2 - x1), 2) + pow((y2 - y1), 2))
+const unitVector = (x1, y1, x2, y2, steps, step) => {
+    const distance = sqrt(pow((x2 - x1), 2) + pow((y2 - y1), 2));
+    return {
+        x: x1 + ((distance / steps) * step / distance) * (x2 - x1),
+        y: y1 + ((distance / steps) * step / distance) * (y2 - y1)
+    };
+}
 
 class Matrix {
     constructor(rows = 0, cols = 0, matrix = null) {
@@ -24,7 +40,7 @@ class Matrix {
     };
 
     print() {
-        console.print(this.matrix)
+        console.table(this.matrix)
     }
 
     // --------------------------------------------------------------------------------------------------------------------
@@ -59,7 +75,6 @@ class Matrix {
             }
         }
         return ans;
-
     };
 
     // Add a value or Matrix to a Matrix object.
@@ -221,7 +236,6 @@ class Matrix {
             NetworkError.error('x, y arguments exceed the matrix dimensions.', '.insert');
         }
     };
-
 
     // --------------------------------------------------------------------------------------------------------------------
     // Map matrix values to a function
@@ -491,7 +505,7 @@ class Matrix {
     };
 }
 
-const normalizeData = (data, min, max) => {
+const normaliseData = (data, min, max) => {
     if (min === undefined || max === undefined) {
         min = minValue(data);
         max = maxValue(data);
@@ -521,13 +535,17 @@ const minValue = (arr) => {
     return record;
 }
 
-const avg = (arr) => {
-    let sum = 0;
-    let len = arr.length;
-    for (let i = 0; i < len; i++) {
-        sum += arr[i];
+const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+
+const smoothen = (vector, variance = 0.5) => {
+    var t_avg = avg(vector) * variance;
+    var ret = Array(vector.length);
+    for (var i = 0; i < vector.length; i++) {
+        var prev = i > 0 ? ret[i - 1] : vector[i];
+        var next = i < vector.length ? vector[i] : vector[i - 1];
+        ret[i] = avg([t_avg, avg([prev, vector[i], next])]);
     }
-    return sum / len;
+    return ret;
 }
 
 const lossfuncs = {
@@ -588,7 +606,6 @@ const lossfuncs = {
             let yHat = predictions[i];
             let x = y - yHat;
 
-            //Mean absolute exponential function
             let top = -x * (exp(-x) - 1);
             let down = exp(-x) + 1;
             sum += top / down;
@@ -646,35 +663,38 @@ const lossfuncs = {
     },
 };
 
-
 const activations = {
     sigmoid(x) {
-        return 1 / (1 + Math.exp(-x));
+        // Range 0 to 1, S-curve
+        return 1 / (1 + exp(-x));
     },
     sigmoid_d(x) {
-        let x1 = 1 / (1 + Math.exp(-x));
+        let x1 = 1 / (1 + exp(-x));
         return x1 * (1 - x1);
     },
     silu(x) {
-        return x / (1 + Math.exp(-x));
+        // Sigmoid-weighted Linear Unit
+        return x / (1 + exp(-x));
     },
     silu_d(x) {
-        let top = 1 + Math.exp(-x) + x * Math.exp(-x);
-        let down = Math.pow(1 + Math.exp(-x), 2);
+        let top = 1 + exp(-x) + x * exp(-x);
+        let down = pow(1 + exp(-x), 2);
         return top / down;
     },
     tanh(x) {
-        let top = Math.exp(x) - Math.exp(-x);
-        let down = Math.exp(x) + Math.exp(-x);
+        // Range -1 to 1, S-curve
+        let top = exp(x) - exp(-x);
+        let down = exp(x) + exp(-x);
         return top / down;
     },
     tanh_d(x) {
-        let numer = Math.pow(Math.exp(2 * x) - 1, 2);
-        let denom = Math.pow(Math.exp(2 * x) + 1, 2);
+        let numer = pow(exp(2 * x) - 1, 2);
+        let denom = pow(exp(2 * x) + 1, 2);
         return 1 - numer / denom;
     },
     leakyrelu(x) {
-        return Math.max(x, x * 0.01);
+        // Activation function based on a ReLU, but it has a small slope for negative values instead of a flat slope
+        return max(x, x * 0.01);
     },
     leakyrelu_d(x) {
         if (x >= 0) {
@@ -684,7 +704,8 @@ const activations = {
         }
     },
     relu(x) {
-        return Math.max(x, 0);
+        // Range 0 to x, Linear
+        return max(x, 0);
     },
     relu_d(x) {
         if (x >= 0) {
@@ -697,24 +718,26 @@ const activations = {
         if (x === 0) {
             return 1;
         } else {
-            return Math.sin(x) / x;
+            return sin(x) / x;
         }
     },
     sinc_d(x) {
         if (x === 0) {
             return 0;
         } else {
-            return Math.cos(x) / x - Math.sin(x) / (x * x);
+            return cos(x) / x - sin(x) / (x * x);
         }
     },
     softsign(x) {
-        return x / (1 + Math.abs(x));
+        // Similar to tanh, -1 to 1, but has a softer slope.
+        return x / (1 + abs(x));
     },
     softsign_d(x) {
-        let down = 1 + Math.abs(x);
+        let down = 1 + abs(x);
         return 1 / (down * down);
     },
     binary(x) {
+        // 0 or 1
         if (x <= 0) {
             return 0;
         } else {
@@ -725,10 +748,11 @@ const activations = {
         return 0;
     },
     softplus(x) {
-        return Math.log(1 + Math.exp(x));
+        // Smooth version of ReLU.
+        return log(1 + exp(x));
     },
     softplus_d(x) {
-        return 1 / (1 + Math.exp(-x));
+        return 1 / (1 + exp(-x));
     },
     leakyrelucapped(x) {
         if (x >= 0 && x <= 6) {
@@ -749,40 +773,16 @@ const activations = {
         }
     },
     leakysigmoid(x) {
-        return 1 / (1 + Math.exp(-x)) + x / 100;
+        return 1 / (1 + exp(-x)) + x / 100;
     },
     leakysigmoid_d(x) {
-        return Math.exp(-x) / Math.pow(Math.exp(-x) + 1, 2) + 1 / 100;
+        return exp(-x) / pow(exp(-x) + 1, 2) + 1 / 100;
     },
-};
-
-const poolfuncs = {
-    max: function (arr) {
-        let record = 0;
-        let len = arr.length;
-        for (let i = 0; i < len; i++) {
-            if (arr[i] > record) {
-                record = arr[i];
-            }
-        }
-        return record;
+    gaussian(x) {
+        // (0,1], bell curve
+        return pow(Math.E, -pow(x, 2));
     },
-    min: function (arr) {
-        let record = Infinity;
-        let len = arr.length;
-        for (let i = 0; i < len; i++) {
-            if (arr[i] < record) {
-                record = arr[i];
-            }
-        }
-        return record;
-    },
-    avg: function (arr) {
-        let sum = 0;
-        let len = arr.length;
-        for (let i = 0; i < len; i++) {
-            sum += arr[i];
-        }
-        return sum / len;
+    gaussian_d(x) {
+        return -2 * x * (pow(Math.E, -pow(x, 2)));
     },
 };

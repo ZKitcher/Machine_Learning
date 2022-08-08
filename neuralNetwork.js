@@ -28,160 +28,127 @@ NetworkError.error = (error, method) => {
     console.trace();
 };
 
-
 const LayerType = {
     input: 'input',
     hidden: 'hidden',
     output: 'output',
-    pool: 'pool'
 }
 
-// { String } type A string representing the type of this layer.
-// { Number } Size The size of the downsampling layer.
-// { Number } Sample The size of the 2d sample iterating trough the array.
-// { Number } Stride The number of jumps the sample is going to perform for each iteration.
+const actFunc = {
+    sigmoid: 'sigmoid',
+    silu: 'silu',
+    tanh: 'tanh',
+    leakyrelu: 'leakyrelu',
+    relu: 'relu',
+    sinc: 'sinc',
+    softsign: 'softsign',
+    binary: 'binary',
+    softplus: 'softplus',
+    leakyrelucapped: 'leakyrelucapped',
+    leakysigmoid: 'leakysigmoid',
+    gaussian: 'gaussian',
+}
+
+const lossFunctions = {
+    MeanSquareError: lossfuncs.mse,
+    MeanAbsoluteError: lossfuncs.mae,
+    MeanBiasError: lossfuncs.mbe,
+    BinaryCrossEntropy: lossfuncs.bce,
+    MinimumClassificationError: lossfuncs.mce,
+    RootMeanSquareError: lossfuncs.rmse,
+    MeanAbsoluteExponential: lossfuncs.mael,
+    LogCoshLoss: lossfuncs.lcl,
+    Quantile: lossfuncs.quantile
+}
+
+const translateLossFunc = loss => {
+    switch (loss) {
+        case 'mse':
+            return 'Mean Square Error'
+        case 'mae':
+            return 'Mean Absolute Error'
+        case 'mbe':
+            return 'Mean Bias Error'
+        case 'bce':
+            return 'Binary Cross Entropy'
+        case 'mce':
+            return 'Minimum Classification Error'
+        case 'rmse':
+            return 'Root Mean Square Error'
+        case 'mael':
+            return 'Mean Absolute Exponential'
+        case 'lcl':
+            return 'Log Cosh Loss'
+        case 'quantile':
+            return 'Quantile'
+    }
+}
 
 class Layer {
-    constructor(type, size, activationFunc, arg3, arg4, arg5) {
+    constructor(type, size, activationFunction) {
         this.type = type;
-        this.subtype = this.getSubtype();
-        if (this.subtype !== LayerType.pool) {
-            if (this.type === LayerType.hidden || this.type === LayerType.output) {
-                this.size = size;
-                this.setFunc(activationFunc);
-                this.layer = new Matrix(this.size, 1);
-            } else if (this.type === LayerType.input) {
-                this.size = size;
-                this.layer = new Matrix(this.size, 1);
-            }
-        } else if (this.subtype === LayerType.pool) {
-            // Pooling Layers
-            this.stride = arg3;
-            this.sampleSize = activationFunc;
-            this.inputSize = size;
-
-            if (arg4 !== undefined && arg5 !== undefined) {
-                this.sizeX = arg4;
-                this.sizeY = arg5;
-            } else {
-                this.sizeX = Math.sqrt(this.inputSize);
-                this.sizeY = this.sizeX;
-                if (this.sizeX !== Math.floor(this.sizeX)) {
-                    NetworkError.error('The array can not be set in a square matrix', 'Layer.constructor');
-                    return;
-                }
-            }
-
-            this.size = Layer.getPoolOutputLength(arg2, arg3, this.sizeX, this.sizeY);
-            let divx = this.inputSize / this.sizeX;
-            let divy = this.inputSize / this.sizeY;
-
-            if (divx !== floor(divx) && divy !== floor(divy)) {
-                NetworkError.error('The width & height value specified to arrange the inputted array as a matrix are not valid. (The array length must be divisible by the width & height values.)', 'Layer.constructor');
-                return;
-            }
-            if (this.size !== floor(this.size)) {
-                NetworkError.error(`The Width must be divisible by the stride (jumps size). Width is the root of the array's length.`, 'Layer.constructor');
-                return;
-            }
-
-            this.input = new Matrix(this.inputSize, 1);
+        if (this.type === LayerType.hidden || this.type === LayerType.output) {
+            this.size = size;
+            this.setActivation(activationFunction);
             this.layer = new Matrix(this.size, 1);
-
-            // picking the pooling function:
-            this.prefix = this.getPrefix();
-            this.poolfunc = poolfuncs[this.prefix];
-
-            //Downsampling function, appling the pool function to the segmented arrays.
-            this.downsample = function (data, f, s) {
-                this.input = Matrix.fromArray(data);
-                //Split inputs in smaller pool arrays.
-                let samples = Layer.selectPools(data, f, s, this.sizeX, this.sizeY);
-                let output = [];
-                for (let i = 0; i < samples.length; i++) {
-                    output[i] = this.poolfunc(samples[i]);
-                }
-                this.layer = Matrix.fromArray(output);
-                return output;
-            };
+        } else if (this.type === LayerType.input) {
+            this.size = size;
+            this.layer = new Matrix(this.size, 1);
+        } else if (typeof this.type === 'string') {
+            NetworkError.error(`The Layer type '${this.type}' is not valid.`, 'Layer.constructor');
         } else {
-            if (typeof this.type === 'string') {
-                NetworkError.error(`The Layer type '${this.type}' is not valid.`, 'Layer.constructor');
-            } else {
-                NetworkError.error('You need to specify a valid type of Layer', 'Layer.constructor');
-            }
+            NetworkError.error('You need to specify a valid type of Layer', 'Layer.constructor');
         }
     }
 
-
-    feed(data, options) {
-        if (this.subtype !== LayerType.pool) {
-            NetworkError.error("This function can only be used by Layers with 'pool' subtype", 'Layer.feed');
-        } else {
-            let showLog = false;
-            let table = false;
-            let f = this.sampleSize;
-            let s = this.stride;
-            if (options !== undefined) {
-                if (options.log) {
-                    showLog = options.log;
-                }
-                if (options.table) {
-                    table = options.table;
-                }
-            }
-            if (data.length !== this.inputSize) {
-                NetworkError.error(`The data you are trying to feed to this ${this.type} layer is not the same length as the number of input this layer has.`, 'Layer.feed');
-                return;
-            } else {
-                let downsampled = this.downsample(data, f, s);
-                if (showLog) {
-                    if (table) {
-                        console.table(downsampled);
-                    } else {
-                        console.log(downsampled);
-                    }
-                }
-                return downsampled;
-            }
-        }
-    };
-
-    print() {
-        console.log(this);
-    };
-
-    getSqIndex(w, i, j) {
-        return w * j + i;
-    };
-
-    getSubtype() {
-        let str = this.type;
-        let len = str.length;
-        let subtype = str.slice(len - 4, len);
-        if (subtype === LayerType.pool) {
-            return subtype;
-        } else {
-            return str;
-        }
-    };
-
-    setFunc(act) {
-        const lowerCaseAct = act.toLocaleLowerCase();
-        let obj = Layer.stringTofunc(lowerCaseAct);
+    setActivation(act) {
+        const obj = Layer.stringTofunc(act);
         if (obj !== undefined) {
             this.actname = obj.name;
             this.actname_d = obj.name_d;
             this.actfunc = obj.func;
             this.actfunc_d = obj.func_d;
         } else {
-            NetworkError.error('Bad activation information', 'Layer.setFunc');
+            NetworkError.error('Bad activation information', 'Layer.setActivation');
             return;
         }
     };
 
-    static getPoolOutputLength(f, s, w, h) {
-        return ((w - f) / s + 1) * ((h - f) / s + 1);
+    feed(data, options) {
+        let showLog = false;
+        let table = false;
+        let f = this.sampleSize;
+        let s = this.stride;
+        if (options !== undefined) {
+            if (options.log) {
+                showLog = options.log;
+            }
+            if (options.table) {
+                table = options.table;
+            }
+        }
+        if (data.length !== this.inputSize) {
+            NetworkError.error(`The data you are trying to feed to this ${this.type} layer is not the same length as the number of input this layer has.`, 'Layer.feed');
+            return;
+        } else {
+            let downsampled = this.downsample(data, f, s);
+            if (showLog) {
+                if (table) {
+                    console.table(downsampled);
+                } else {
+                    clog(downsampled);
+                }
+            }
+            return downsampled;
+        }
+    };
+
+    print() {
+        clog(this);
+    };
+
+    getSqIndex(w, i, j) {
+        return w * j + i;
     };
 
     getPrefix() {
@@ -191,38 +158,20 @@ class Layer {
         return prefix;
     };
 
-    static selectPools(arr, f, s, w, h) {
-        if (w !== Math.floor(w)) {
-            return;
-        } else if (w / s !== Math.floor(w / s)) {
-            return;
-        }
-        let samples = [];
-        for (let y = 0; y + f <= h; y += s) {
-            for (let x = 0; x + f <= w; x += s) {
-                let sample = [];
-                for (let j = 0; j < f; j++) {
-                    for (let i = 0; i < f; i++) {
-                        sample.push(arr[Layer.getSqIndex(w, i + x, j + y)]);
-                    }
-                }
-                samples.push(sample);
-            }
-        }
-        return samples;
-    };
-
     static stringTofunc(str) {
-        let act = str.toLocaleLowerCase();
-        let der = act + '_d';
-        let func;
-        let func_d;
-        func = activations[act];
-        func_d = activations[der];
+        const act = str.toLocaleLowerCase();
+        const der = `${act}_d`;
+        let func = activations[act];
+        let func_d = activations[der];
 
         if (func !== undefined) {
             if (func_d !== undefined) {
-                return { name: act, name_d: der, func: func, func_d: func_d };
+                return {
+                    name: act,
+                    name_d: der,
+                    func: func,
+                    func_d: func_d
+                };
             } else {
                 NetworkError.error(`You need to create the derivative of your custom function. The activation function specified '${str}' does not have a derivative assigned. The activation function was set to the default 'sigmoid'.`, 'Layer.stringTofunc');
                 return;
@@ -232,10 +181,6 @@ class Layer {
             return;
         }
     };
-
-    log() {
-        console.log(this);
-    };
 };
 
 class NeuralNetwork {
@@ -244,7 +189,7 @@ class NeuralNetwork {
         this.o = o;
 
         this.inputs = new Layer(LayerType.input, i);
-        this.outputs = new Layer(LayerType.output, o, 'sigmoid');
+        this.outputs = new Layer(LayerType.output, o, actFunc.sigmoid);
 
         this.Layers = [this.inputs, this.outputs];
         this.weights = [];
@@ -259,10 +204,15 @@ class NeuralNetwork {
         this.architecture = [i, o];
 
         this.epoch = 0;
-        this.recordLoss = false;
+        this.timeTraining = 0;
 
-        this.lossfunc = lossfuncs.mse;
-        this.lossfunc_s = this.lossfunc.name;
+        this.correctPrediction = 0;
+        this.predictionCount = 0;
+        this.accuracyThreshold = 0.1;
+
+        this.lossfunc = lossFunctions.MeanSquareError;
+        this.lossfuncName = translateLossFunc(this.lossfunc.name);
+
         this.percentile = 0.5;
     }
 
@@ -280,10 +230,10 @@ class NeuralNetwork {
                 if (typeof act === 'string') {
                     NetworkError.error(`'${act}' is not a valid activation function, as a result, the activation function was set to 'sigmoid'.`, 'NeuralNetwork.addHiddenLayer');
                 }
-                act = 'sigmoid';
+                act = actFunc.sigmoid;
             }
         } else {
-            act = 'sigmoid';
+            act = actFunc.sigmoid;
         }
 
         this.architecture.splice(this.architecture.length - 1, 0, size);
@@ -291,12 +241,12 @@ class NeuralNetwork {
         this.Layers.splice(this.Layers.length - 1, 0, layer);
     };
 
-    makeWeights(arg1, arg2) {
+    makeWeights(x, y) {
         let min = -1;
         let max = 1;
-        if (arg1 !== undefined && arg2 !== undefined) {
-            min = arg1;
-            max = arg2;
+        if (x !== undefined && y !== undefined) {
+            min = x;
+            max = y;
         }
         for (let i = 0; i < this.Layers.length - 1; i++) {
             let previousLayerObj = this.Layers[i];
@@ -311,7 +261,7 @@ class NeuralNetwork {
             this.biases[i] = biases.randomize(1, -1);
 
             if (layerObj.actfunc === undefined) {
-                layerObj.setFunc('sigmoid');
+                layerObj.setActivation(actFunc.sigmoid);
             }
         }
 
@@ -328,12 +278,11 @@ class NeuralNetwork {
                 NetworkError.error(`'${act}' is not a valid activation function, as a result, the activation function is set to 'sigmoid' by default.`, 'NeuralNetwork.outputActivation');
                 return;
             } else {
-                NetworkError.error("Did not detect a string value, as a result, the activation function is set to 'sigmoid' by default.", 'NeuralNetwork.outputActivation');
+                NetworkError.error(`Did not detect a string value, as a result, the activation function is set to 'sigmoid' by default.`, 'NeuralNetwork.outputActivation');
                 return;
             }
         }
-
-        this.Layers[this.Layers.length - 1].setFunc(act);
+        this.Layers[this.Layers.length - 1].setActivation(act);
     };
 
     ffwDefaults() {
@@ -342,30 +291,6 @@ class NeuralNetwork {
             table: false,
             decimals: undefined,
             asLabel: false,
-        };
-    };
-
-    bckDefaults() {
-        return {
-            log: false,
-            mode: 'cpu',
-            table: false,
-            dropout: undefined,
-        };
-    };
-
-    logDefaults() {
-        return {
-            struct: true,
-            misc: true,
-            weights: false,
-            biases: false,
-            gradients: false,
-            errors: false,
-            layers: false,
-            table: false,
-            decimals: undefined,
-            details: false,
         };
     };
 
@@ -401,12 +326,11 @@ class NeuralNetwork {
         } else if (options.asLabel) {
             out = this.asLabel(out);
         } else if (roundData && !options.asLabel) {
-            out = out.map((x) => round(x * dec) / dec);
+            out = out.map(x => round(x * dec) / dec);
         }
 
-        if (options.log === true) {
-            this.print('Prediction: ');
-            this.print(out, options.table);
+        if (options.log) {
+            clog('Prediction: ', out);
         }
         return out;
     };
@@ -416,9 +340,9 @@ class NeuralNetwork {
     };
 
     feed(input) {
-        this.print('Inputs: ');
-        this.print(input);
-        return this.feedForward(input, { log: true, decimals: 3 });
+        clog('Inputs: ', input);
+        this.feedForward(input, { log: true, decimals: 3 });
+        this.print('---------------------------')
     }
 
     exhibition(dataset) {
@@ -427,17 +351,27 @@ class NeuralNetwork {
                 NetworkError.error(`Dataset missing (.input) property.`, 'NeuralNetwork.exhibition');
                 return;
             }
-        })
-
-        dataset.forEach(e => {
-            this.feedForward(e.input, { log: true, decimals: 3 });
+            clog('🔢 Inputs:\t\t\t', JSON.stringify(e.input));
+            const pred = this.feedForward(e.input, { log: false, decimals: 3 });
             if (e.target) {
-                this.print('Expected: ')
-                this.print(e.target)
+                const correct = this.isCorrect(e.target, pred);
+                clog('🎯 Target:\t\t\t', JSON.stringify(e.target));
+                clog('%c🔮 Prediction:', `background-color: ${correct ? '#bcffa8' : '#ffa8a8'};`, '\t', JSON.stringify(pred), `${correct ? '✔️' : '❌'}`);
+            } else {
+                clog(`🔮 Prediction:\t\t`, JSON.stringify(pred));
             }
-            this.print('---------------------------')
+            clog('---------------------------');
         });
     }
+
+    bckDefaults() {
+        return {
+            log: false,
+            mode: 'cpu',
+            table: false,
+            dropout: undefined,
+        };
+    };
 
     backpropagate(inputs, target, options = this.bckDefaults()) {
         let targets;
@@ -456,6 +390,9 @@ class NeuralNetwork {
         }
 
         this.outs = this.feedForward(inputs, { log: false, mode: options.mode });
+
+        this.predictionCount++;
+        this.correctPrediction += this.isCorrect(target, this.outs) ? 1 : 0;
 
         this.errors[this.errors.length - 1] = Matrix.sub(targets, this.Layers[this.Layers.length - 1].layer);
 
@@ -504,6 +441,10 @@ class NeuralNetwork {
         }
     };
 
+    isCorrect(target, prediction) {
+        return target.filter((e, i) => abs(e - prediction[i]) <= this.accuracyThreshold).length === target.length
+    }
+
     train(generations, dataset, options) {
         dataset.forEach(e => {
             if (!e.input) {
@@ -516,11 +457,12 @@ class NeuralNetwork {
             }
         })
 
+        generations += this.epoch;
+        const start = performance.now();
         for (this.epoch; this.epoch < generations; this.epoch++) {
-            dataset.forEach(e => {
-                this.backpropagate(e.input, e.target, options);
-            })
+            dataset.forEach(e => this.backpropagate(e.input, e.target, options))
         }
+        this.timeTraining += performance.now() - start;
     };
 
     mapWeights(f) {
@@ -531,6 +473,21 @@ class NeuralNetwork {
         } else {
             NetworkError.error('Argument must be a function', 'NeuralNetwork.mapWeights');
         }
+    };
+
+    logDefaults() {
+        return {
+            struct: true,
+            misc: true,
+            weights: false,
+            biases: false,
+            gradients: false,
+            errors: false,
+            layers: false,
+            table: false,
+            decimals: 3,
+            details: false,
+        };
     };
 
     log(options = this.logDefaults()) {
@@ -557,39 +514,42 @@ class NeuralNetwork {
             this.makeWeights();
         }
         if (options.struct) {
-            console.log('🧠 Network:');
-            console.log('Layers:');
+            clog('%c🧠 Network:', 'padding: 0.2em; font-size: 2em;');
+            clog('Layers:');
 
             this.Layers.forEach((e, i) => {
-                console.log(`\t${i ? 'output Layer:' : 'input Layer:'}\t${e.size}\t${i ? `(${e.actname})` : ''}`)
-                if (options.layers) console.log(this.Layers[i]);
+                clog(`\t${i === 0 ? 'Input Layer:' : i === this.Layers.length - 1 ? 'Output Layer:' : 'Hidden Layer:'}\t${e.size}\t${i ? `(${e.actname})` : ''}`)
+                if (options.layers) clog(this.Layers[i]);
             })
         }
         if (options.weights) {
-            console.log('Weights:');
+            clog('Weights:');
             this.weights.forEach(e => e.log({ decimals: options.decimals, table: options.table }))
         }
         if (options.biases) {
-            console.log('Biases:');
+            clog('Biases:');
             this.biases.forEach(e => e.log({ decimals: options.decimals, table: options.table }))
         }
         if (options.errors) {
-            console.log('Errors:');
+            clog('Errors:');
             this.errors.forEach(e => e.log({ decimals: options.decimals, table: options.table }))
         }
         if (options.gradients) {
-            console.log('Gradients:');
+            clog('Gradients:');
             this.gradients.forEach(e => e.log({ decimals: options.decimals, table: options.table }))
         }
+
         if (options.misc) {
-            console.log('Other Values: ');
-            console.log(`\tLearning rate:\t${this.learningRate}`);
-            console.log(`\tLoss Function:\t${this.lossfunc_s}`);
-            console.log(`\tCurrent Epoch:\t${(this.epoch).toLocaleString()}`);
-            console.log(`\tLatest Loss:\t${this.loss}`);
+            clog('Other Values: ');
+            clog(`\tLearning Rate:\t${this.learningRate}`);
+            clog(`\tLoss Function:\t${this.lossfuncName}`);
+            clog(`\tCurrent Epoch:\t${(this.epoch).toLocaleString()}`);
+            clog(`\tAccuracy:\t\t${((this.correctPrediction / this.predictionCount) * 100).toFixed(2)}%`);
+            clog(`\tTime Training:\t${this.timeTraining.toFixed(2)}/ms\t~${(this.timeTraining / this.epoch).toFixed(5)}/ms Per Epoch`);
+            clog(`\tLatest Loss:\t${this.loss}`);
             this.print(`---------------------------`);
         }
-        console.log('\n');
+        clog('\n');
         return;
     };
 
@@ -597,7 +557,7 @@ class NeuralNetwork {
         if (option) {
             console.table(v);
         } else {
-            console.log(v);
+            clog(v);
         }
     };
 
@@ -614,6 +574,65 @@ class NeuralNetwork {
         return true;
     };
 
+    checkDropoutRate(dropout) {
+        if (dropout >= 1) {
+            NetworkError.error('The probability value can not be bigger or equal to 1', 'NeuralNetwork.backpropagate');
+            return false;
+        } else if (dropout <= 0) {
+            NetworkError.error('The probability value can not be smaller or equal to 0', 'NeuralNetwork.backpropagate');
+            return false;
+        }
+        return true;
+    };
+
+    addDropout(rate) {
+        if (this.weights.length === 0) {
+            NetworkError.error('You need to initialise weights before using this function, use NetworkError.makeWeights();', 'NetworkError.addDropout');
+            return;
+        }
+
+        let func = (v => Math.floor(Math.random() + (1 - rate)))
+            .toString()
+            .replace(/rate/gm, rate);
+
+        let randomMap = eval(func);
+
+        let inactive = [];
+        for (let i = 0; i < this.Layers.length; i++) {
+            let neuronList = new Array(this.Layers[i].size).fill(1).map(randomMap);
+            inactive.push(neuronList);
+        }
+
+        this.dropout = [];
+        for (let i = 0; i < this.weights.length; i++) {
+            this.dropout.push(
+                new Matrix(this.weights[i].rows, this.weights[i].cols).initiate(1)
+            );
+        }
+
+        for (let i = 0; i < inactive.length; i++) {
+            if (i === 0) {
+                for (let j = 0; j < inactive[i].length; j++) {
+                    if (inactive[i][j] === 0) {
+                        this.dropout[i].fillCol(j, 0);
+                    }
+                }
+            } else if (i === inactive.length - 1) {
+                for (let j = 0; j < inactive[i].length; j++) {
+                    if (inactive[i][j] === 0) {
+                        this.dropout[i - 1].fillRow(j, 0);
+                    }
+                }
+            } else {
+                for (let j = 0; j < inactive[i].length; j++) {
+                    if (inactive[i][j] === 0) {
+                        this.dropout[i - 1].fillRow(j, 0);
+                        this.dropout[i].fillCol(j, 0);
+                    }
+                }
+            }
+        }
+    };
 
     fromJSON(data) {
         this.i = data.architecture[0];
@@ -628,14 +647,20 @@ class NeuralNetwork {
         data.errors.map((e, i) => this.errors[i].set(e))
         data.gradients.map((e, i) => this.gradients[i].set(e))
 
-        this.lossfunc = lossfuncs.mse;
-        this.lossfunc_s = data.lossFunction;
+        this.lossfunc = lossfuncs[data.lossFunction];
+        this.lossfuncName = data.lossFunctionName;
         this.outs = Matrix.toArray(this.Layers[this.Layers.length - 1].layer);
         this.loss = data.latestLoss;
         this.learningRate = data.learningRate;
         this.architecture = data.architecture;
         this.epoch = data.epoch;
         this.percentile = data.percentile;
+
+        this.timeTraining = data.timeTraining;
+        this.correctPrediction = data.correctPrediction;
+        this.predictionCount = data.predictionCount;
+        this.accuracyThreshold = data.accuracyThreshold;
+
         return this;
     }
 
@@ -644,9 +669,16 @@ class NeuralNetwork {
             architecture: this.architecture,
             epoch: this.epoch,
             learningRate: this.learningRate,
-            lossFunction: this.lossfunc_s,
+            lossFunction: this.lossfunc.name,
+            lossFunctionName: this.lossfuncName,
             latestLoss: this.loss,
             percentile: this.percentile,
+
+            timeTraining: this.timeTraining,
+            correctPrediction: this.correctPrediction,
+            predictionCount: this.predictionCount,
+            accuracyThreshold: this.accuracyThreshold,
+
             layers: this.Layers.map(e => e),
             weights: this.weights.map(e => e.matrix),
             biases: this.biases.map(e => e.matrix),
@@ -655,20 +687,18 @@ class NeuralNetwork {
         };
     };
 
-    static createFromJSON(JSON, options) {
-        const model = new NeuralNetwork();
-        model.fromJSON(JSON);
-        if (options) {
-            console.log('Network created from JSON', JSON)
+    static createFromJSON(json) {
+        if (typeof json === 'string') {
+            json = JSON.parse(json)
         }
+        const model = new NeuralNetwork();
+        model.fromJSON(json);
         return model;
     }
 
     downloadNetwork(title = 'Neural Network') {
         download(title, JSON.stringify(this.toJSON()))
     }
-
-    // Neural Evolution
 
     copy() {
         return NeuralNetwork.createFromJSON(this.toJSON());
@@ -720,57 +750,480 @@ class NeuralNetwork {
 
         return model
     };
+}
 
+//------------------------------------------------------------------------------------------------------
+// NeuroEvolution of Augmenting Topologies (NEAT)
 
-    // P5js visualisation
+class NEATConnection {
+    constructor(from, to, weight) {
+        this.fromNode = from;
+        this.toNode = to;
+        this.weight = weight;
+        this.enabled = true;
+    }
 
-    show(scaler = 1, x = width, y = 20) {
-        let xPointer = x;
-        let yPointer = y;
-        let maxHeight = 0;
+    mutateWeight(magnitude) {
+        rand() < 0.05 ? this.weight = rand(-1, 1) : this.weight += rand(-magnitude, magnitude);
+    }
 
-        this.Layers.forEach(e => maxHeight = e.size > maxHeight ? e.size : maxHeight)
+    copy() {
+        let copy = new NEATConnection(this.fromNode, this.toNode, this.weight);
+        copy.enabled = this.enabled;
+        return copy;
+    }
 
-        maxHeight *= (30 * scaler);
-
-        let neurons = [];
-
-        for (let i = this.Layers.length - 1; i > -1; i--) {
-            xPointer = xPointer - (75 * scaler);
-            yPointer = y;
-            let pointLayer = []
-            let layer = this.Layers[i]
-            let increment = maxHeight / (layer.size + 1)
-
-            for (let j = 0; j < layer.size; j++) {
-                pointLayer.push(createVector(xPointer, yPointer + increment))
-                yPointer += increment;
-            }
-            neurons.push(pointLayer)
-        }
-
-        neurons.reverse()
-
-        const weights = this.weights.map(e => e.matrix);
-
-        for (let i = 0; i < neurons.length; i++) {
-            for (let j = 0; j < neurons[i].length; j++) {
-                let n = neurons[i][j]
-                if (i < neurons.length - 1) {
-                    neurons[i + 1].forEach((e, f) => {
-                        push()
-                        let weight = weights[i][f][j]
-                        stroke(weight > 0 ? 255 : 0)
-                        strokeWeight(weight)
-                        line(n.x, n.y, e.x, e.y)
-                        pop()
-                    })
-                }
-                ellipse(n.x, n.y, 6 * scaler, 6 * scaler)
-            }
-        }
+    getInnovationNumber() {
+        let x = this.fromNode.number + this.toNode.number;
+        return 0.5 * x * ++x + this.toNode.number;
     }
 }
+
+class NEATNode {
+    constructor(num, lay, isOutput) {
+        this.number = num;
+        this.layer = lay;
+        this.bias = rand(-1, 1);
+        this.output = isOutput || false;
+        this.activation = actFunc[rand(Object.keys(actFunc))];
+
+
+        this.inputSum = 0;
+        this.outputValue = 0;
+        this.outputConnections = [];
+
+        this.id = rand();
+    }
+
+    engage() {
+        if (this.layer !== 0) this.outputValue = activations[this.activation](this.inputSum + this.bias);
+        for (let i = 0; i < this.outputConnections.length; i++) {
+            if (this.outputConnections[i].enabled) this.outputConnections[i].toNode.inputSum += this.outputConnections[i].weight * this.outputValue;
+        }
+    }
+
+    mutateBias(magnitude) {
+        rand() < 0.05 ? this.bias = rand(-1, 1) : this.bias += rand(-magnitude, magnitude);
+    }
+
+    mutateActivation(activation) {
+        if (activation === undefined) {
+            this.activation = actFunc[rand(Object.keys(actFunc))];
+        } else if (actFunc[activation] !== undefined) {
+            this.activation = activation;
+        } else {
+            NetworkError.warn(`Provided Activation function "${activation}" not listed, assigning random`, 'NEATNode.mutateActivation');
+            this.activation = actFunc[rand(Object.keys(actFunc))];
+        }
+    }
+
+    copy() {
+        let node = new NEATNode(this.number, this.layer, this.output);
+        node.bias = this.bias;
+        node.activation = this.activation;
+        return node;
+    }
+}
+
+class NEATGenome {
+    constructor(i = 1, o = 1, id = rand(), offSpring = false) {
+        this.inputs = i;
+        this.outputs = o;
+        this.id = id;
+        this.layers = 2;
+        this.nextNode = 0;
+
+        this.nodes = [];
+        this.connections = [];
+
+        this.mutationRates = {};
+        this.rollMutations()
+
+        if (!offSpring) {
+            for (let i = 0; i < this.inputs; i++) {
+                this.nodes.push(new NEATNode(this.nextNode, 0));
+                this.nextNode++;
+            }
+            for (let i = 0; i < this.outputs; i++) {
+                let node = new NEATNode(this.nextNode, 1, true);
+                this.nodes.push(node);
+                this.nextNode++;
+            }
+            for (let i = 0; i < this.inputs; i++) {
+                for (let j = this.inputs; j < this.outputs + this.inputs; j++) {
+                    this.connections.push(new NEATConnection(this.nodes[i], this.nodes[j], rand(-1, 1)));
+                }
+            }
+        }
+        this.generateNetwork()
+    }
+
+    generateNetwork() {
+        for (let i = 0; i < this.nodes.length; i++) {
+            this.nodes[i].outputConnections = []
+        }
+        for (let i = 0; i < this.connections.length; i++) {
+            this.connections[i].fromNode.outputConnections.push(this.connections[i])
+        }
+        this.sortByLayer();
+    }
+
+    predict(inputs) {
+        return this.feedForward(inputs)
+    }
+
+    feedForward(inputValues) {
+        let result = [];
+        let resIndex = 0;
+        for (let i = 0; i < this.nodes.length; i++) {
+            if (i < this.inputs) this.nodes[i].outputValue = inputValues[i];
+            this.nodes[i].engage();
+            if (this.nodes[i].output) {
+                result[resIndex] = this.nodes[i].outputValue;
+                resIndex++;
+            }
+            this.nodes[i].inputSum = 0;
+        }
+        return result;
+    }
+
+    crossover(partner) {
+        let offSpring = new NEATGenome(this.inputs, this.outputs, rand(), true);
+
+        for (let i = 0; i < this.nodes.length; i++) {
+            let node = this.nodes[i].copy();
+            if (node.output) {
+                let partnerNode = partner.nodes[partner.getNode(node.number)];
+                if (rand() > 0.5) {
+                    node.activation = partnerNode.activation;
+                    node.bias = partnerNode.bias;
+                }
+            }
+            offSpring.nodes[i] = node;
+        }
+
+        for (let i = 0; i < this.connections.length; i++) {
+            const index = this.commonConnection(this.connections[i].getInnovationNumber(), partner.connections);
+            let conn = index !== -1
+                ? rand() > 0.5 ? this.connections[i].copy() : partner.connections[index].copy()
+                : this.connections[i].copy();
+
+            conn.fromNode = offSpring.nodes[offSpring.getNode(conn.fromNode.number)];
+            conn.toNode = offSpring.nodes[offSpring.getNode(conn.toNode.number)];
+
+            if (conn.fromNode && conn.toNode) offSpring.connections.push(conn);
+        }
+
+        let p1 = this.mutationRates;
+        let p2 = partner.mutationRates;
+        offSpring.mutationRates.connectionRate = rand() > 0.5 ? p1.connectionRate : p2.connectionRate;
+        offSpring.mutationRates.biasRate = rand() > 0.5 ? p1.biasRate : p2.biasRate;
+        offSpring.mutationRates.activationRate = rand() > 0.5 ? p1.activationRate : p2.activationRate;
+        offSpring.mutationRates.addConnectionRate = rand() > 0.5 ? p1.addConnectionRate : p2.addConnectionRate;
+        offSpring.mutationRates.addNodeRate = rand() > 0.5 ? p1.addNodeRate : p2.addNodeRate;
+
+        offSpring.layers = this.layers;
+        offSpring.nextNode = offSpring.nodes.length;
+
+        return offSpring;
+    }
+
+    mutate(mutationRate = 0.1) {
+        const rates = this.mutationRates;
+        this.connections.forEach(e => { if (rand() < rates.connectionRate) e.mutateWeight(mutationRate) })
+        this.nodes.forEach(e => { if (rand() < rates.biasRate) e.mutateBias(mutationRate) })
+        if (rand() < rates.activationRate) this.nodes[floor(rand(this.nodes.length))].mutateActivation();
+        if (rand() < rates.addConnectionRate) this.addConnection();
+        if (rand() < rates.addNodeRate) this.addNode();
+        if (rand() < rates.rollMutation) this.rollMutations();
+        this.generateNetwork();
+    }
+
+    rollMutations() {
+        this.mutationRates.rollMutation = rand(0.01, 1)
+        this.mutationRates.connectionRate = rand(0.8, 0.9)
+        this.mutationRates.biasRate = rand(0.5, 0.6)
+        this.mutationRates.activationRate = rand(0.05, 0.1)
+        this.mutationRates.addConnectionRate = rand(0.05, 0.1)
+        this.mutationRates.addNodeRate = rand(0.01, 0.05)
+    }
+
+    addNode() {
+        let connectionIndex = floor(rand(this.connections.length));
+        let pickedConnection = this.connections[connectionIndex];
+
+        if (pickedConnection.fromNode.layer !== 0 && !pickedConnection.toNode.output) {
+            connectionIndex = floor(rand(this.connections.length));
+            pickedConnection = this.connections[connectionIndex];
+        }
+
+        pickedConnection.enabled = false;
+        this.connections.splice(connectionIndex, 1);
+
+        let newNode = new NEATNode(this.nextNode, pickedConnection.fromNode.layer + 1);
+
+        for (let i = 0; i < this.nodes.length; i++) {
+            if (this.nodes[i].layer > pickedConnection.fromNode.layer) this.nodes[i].layer++;
+        }
+
+        let newConnection1 = new NEATConnection(pickedConnection.fromNode, newNode, 1);
+        let newConnection2 = new NEATConnection(newNode, pickedConnection.toNode, pickedConnection.weight);
+
+        this.layers++;
+        this.connections.push(newConnection1);
+        this.connections.push(newConnection2);
+        this.nodes.push(newNode);
+        this.nextNode++;
+    }
+
+    addConnection() {
+        if (this.fullyConnected()) return;
+
+        let node1 = floor(rand(this.nodes.length));
+        let node2 = floor(rand(this.nodes.length));
+
+        while (this.nodes[node1].layer === this.nodes[node2].layer || this.nodesConnected(this.nodes[node1], this.nodes[node2])) {
+            node1 = floor(rand(this.nodes.length));
+            node2 = floor(rand(this.nodes.length));
+        }
+
+        if (this.nodes[node1].layer > this.nodes[node2].layer) {
+            let temp = node1;
+            node1 = node2;
+            node2 = temp;
+        }
+
+        let newConnection = new NEATConnection(this.nodes[node1], this.nodes[node2], rand(-1, 1));
+        this.connections.push(newConnection);
+    }
+
+    commonConnection(innovation, connections) {
+        return connections.findIndex(e => innovation === e.getInnovationNumber());
+    }
+
+    nodesConnected(node1, node2) {
+        for (let i = 0; i < this.connections.length; i++) {
+            let conn = this.connections[i];
+            if ((conn.fromNode == node1 && conn.toNode == node2) || (conn.fromNode == node2 && conn.toNode == node1)) {
+                return true;
+            }
+        };
+        return false;
+    }
+
+    fullyConnected() {
+        let maxConnections = 0;
+        let nodesPerLayer = [];
+
+        for (let i = 0; i < this.nodes.length; i++) {
+            if (nodesPerLayer[this.nodes[i].layer] !== undefined) {
+                nodesPerLayer[this.nodes[i].layer]++;
+            } else {
+                nodesPerLayer[this.nodes[i].layer] = 1;
+            }
+        };
+
+        for (let i = 0; i < this.layers - 1; i++) {
+            for (let j = i + 1; j < this.layers; j++) {
+                maxConnections += nodesPerLayer[i] * nodesPerLayer[j];
+            }
+        }
+
+        return maxConnections === this.connections.length;
+    }
+
+    sortByLayer() {
+        this.nodes.sort((a, b) => a.layer - b.layer);
+    }
+
+    getNode(x) {
+        return this.nodes.findIndex(e => e.number === x)
+    }
+
+    toJSON() {
+        return {
+            inputs: this.inputs,
+            outputs: this.outputs,
+            id: this.id,
+            layers: this.layers,
+            nextNode: this.nextNode,
+            mutationRates: this.mutationRates,
+            nodes: this.nodes.map(e => {
+                return {
+                    activation: e.activation,
+                    bias: e.bias,
+                    id: e.id,
+                    inputSum: e.inputSum,
+                    layer: e.layer,
+                    number: e.number,
+                    output: e.output,
+                    outputConnections: [],
+                    outputValue: e.outputValue,
+                }
+            }),
+            connections: this.connections.map(e => {
+                return {
+                    enabled: e.enabled,
+                    fromNode: e.fromNode.id,
+                    toNode: e.toNode.id,
+                    weight: e.weight
+                }
+            })
+        };
+    }
+
+    fromJSON(data) {
+        this.inputs = data.inputs;
+        this.outputs = data.outputs;
+        this.id = data.id;
+        this.layers = data.layers;
+        this.nextNode = data.nextNode;
+        this.mutationRates = data.mutationRates;
+
+        this.nodes = data.nodes.map(e => {
+            let newNode = new NEATNode();
+            newNode.activation = e.activation;
+            newNode.bias = e.bias;
+            newNode.id = e.id;
+            newNode.inputSum = e.inputSum;
+            newNode.layer = e.layer;
+            newNode.number = e.number;
+            newNode.output = e.output;
+            newNode.outputConnections = e.outputConnections;
+            newNode.outputValue = e.outputValue;
+            return newNode;
+        });
+
+        this.connections = data.connections.map(e => {
+            let newConn = new NEATConnection()
+            newConn.enabled = e.enabled;
+            newConn.weight = e.weight;
+            newConn.fromNode = this.nodes.find(f => f.id === e.fromNode);
+            newConn.toNode = this.nodes.find(f => f.id === e.toNode);
+            return newConn;
+        });
+
+        this.generateNetwork()
+    }
+
+    downloadNetwork(title = 'NEAT Genome') {
+        download(title, JSON.stringify(this.toJSON()))
+    }
+
+    copy() {
+        let copy = new NEATGenome(this.inputs, this.outputs, this.id);
+        copy.mutationRates = this.mutationRates;
+        copy.nodes = this.nodes.slice();
+        copy.connections = this.connections.slice();
+        return copy;
+    }
+
+    static createFromJSON(json) {
+        if (typeof json === 'string') {
+            json = JSON.parse(json)
+        }
+        const model = new NEATGenome();
+        model.fromJSON(json);
+        return model;
+    }
+
+    render(width = 500, height = 400, container = 'svgBrainContainer') {
+        const svgElement = document.getElementById(container);
+        if (!svgElement) {
+            const newSVGContainer = document.createElement('div');
+            newSVGContainer.id = container;
+            newSVGContainer.style.position = 'absolute';
+            newSVGContainer.style.top = '5px';
+            newSVGContainer.style.right = '5px';
+            document.body.prepend(newSVGContainer);
+        }
+
+        let element = document.getElementById(agent.id);
+        if (element) element.parentNode.removeChild(element);
+
+        let svg = d3.select('body').append('svg')
+            .attr('width', width)
+            .attr('height', height)
+            .attr('id', agent.id);
+
+        let force = d3.layout.force()
+            .size([width, height]);
+
+        let min = Infinity;
+        let max = -Infinity;
+
+        const connections = agent.connections.map(e => {
+            if (e.weight > max) max = e.weight;
+            if (e.weight < min) min = e.weight;
+            return {
+                source: agent.getNode(e.fromNode.number),
+                target: agent.getNode(e.toNode.number),
+                weight: e.weight,
+                enabled: e.enabled
+            }
+        });
+
+        const nodes = agent.nodes.map(e => {
+            let node = e.copy();
+            if (node.layer === 0) {
+                node.fixed = true;
+                node.y = height - (height * 0.2);
+                node.x = ((width / agent.inputs) * node.number) + (width / agent.inputs) / 2;
+            } else if (node.output) {
+                node.fixed = true;
+                node.y = height * 0.2;
+                node.x = ((width / agent.outputs) * (node.number - agent.inputs)) + (width / agent.outputs) / 2;
+            }
+            return node
+        });
+
+        const getColor = (value, min, max) => `hsl(${((1 - (value - min) / (max - min)) * 120).toString(10)},100%,50%)`;
+
+        force.nodes(nodes)
+            .links(connections)
+            .gravity(0.001)
+            .linkStrength(1)
+            .start();
+
+        let link = svg.selectAll('.link')
+            .data(connections)
+            .enter().append('line')
+            .attr('class', 'link')
+            .style('stroke-width', (d) => { return d.enabled ? abs(d.weight) + 1 : 0 })
+            .style('stroke', (d) => { return getColor(d.weight, min, max); })
+            .style('opacity', (d) => { return d.source.layer === 0 && d.target.output ? '0.5' : '1' });
+
+        let node = svg.selectAll('.node')
+            .data(nodes)
+            .enter().append('g')
+            .attr('class', 'node')
+            .call(force.drag);
+
+        node.append('circle')
+            .attr('r', '5')
+            .attr('fill', (d) => { return d.layer == 0 ? '#00f' : d.output ? '#f00' : '#000' });
+
+        node.append('text')
+            .attr('dx', 10)
+            .attr('dy', 4)
+            .text((d) => { return (d.output ? `(${d.activation})` : null) })
+
+        force.on('tick', () => {
+            link
+                .attr('x1', (d) => { return d.source.x; })
+                .attr('y1', (d) => { return d.source.y; })
+                .attr('x2', (d) => { return d.target.x; })
+                .attr('y2', (d) => { return d.target.y; });
+
+            node.attr('transform', (d) => { return `translate(${d.x},${d.y})`; });
+        });
+
+        element = document.getElementById(agent.id);
+        document.getElementById(container).append(element);
+    }
+}
+
+//------------------------------------------------------------------------------------------------------
 
 const download = (title, data) => {
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(data);
@@ -780,4 +1233,37 @@ const download = (title, data) => {
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
+}
+
+const XORDemo = () => {
+    const dataset = [
+        {
+            input: [0, 0],
+            target: [0]
+        },
+        {
+            input: [1, 1],
+            target: [0]
+        },
+        {
+            input: [0, 1],
+            target: [1]
+        },
+        {
+            input: [1, 0],
+            target: [1]
+        }
+    ];
+
+    clog('%cXOR Gate Demo', 'font-size: 2em; font-weight: bold;');
+    const nn = new NeuralNetwork(2, 1);
+    nn.addHiddenLayer(6, actFunc.tanh);
+    nn.outputActivation(actFunc.sigmoid);
+    nn.makeWeights();
+    clog('%c📉 Before Training', 'padding: 0.2em; font-size: 1.5em; background: #FF6E6E;');
+    nn.exhibition(dataset);
+    nn.train(5000, dataset);
+    clog('%c📈 After Training', 'padding: 0.2em; font-size: 1.5em; background: #3BFF72;');
+    nn.exhibition(dataset);
+    nn.log();
 }
