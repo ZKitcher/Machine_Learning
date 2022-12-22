@@ -1,12 +1,4 @@
-class QuadPoint {
-    constructor(item) {
-        this.item = item;
-        this.x = item.position.x;
-        this.y = item.position.y;
-    }
-}
-
-class BoundingBox {
+class Rectangle {
     constructor(x, y, w, h) {
         this.x = x;
         this.y = y;
@@ -15,10 +7,12 @@ class BoundingBox {
     }
 
     contains(point) {
-        return (point.x >= this.x - this.w &&
+        return (
+            point.x >= this.x - this.w &&
             point.x < this.x + this.w &&
             point.y >= this.y - this.h &&
-            point.y < this.y + this.h);
+            point.y < this.y + this.h
+        );
     }
 
     intersects(range) {
@@ -35,6 +29,26 @@ class BoundingBox {
         noFill();
         strokeWeight(1);
         rectMode(CENTER);
+
+        if (this.x < this.w / 2) {
+            rect(this.x + width, this.y, this.w, this.h);
+        }
+        if (this.x > width - this.w / 2) {
+            rect(this.x - width, this.y, this.w, this.h);
+        }
+        if (this.y < this.h / 2) {
+            rect(this.x, this.y + height, this.w, this.h);
+        }
+        if (this.y > this.h / 2) {
+            rect(this.x, this.y - height, this.w, this.h);
+        }
+        if (this.x < this.w / 2 && this.y < this.h / 2) {
+            rect(this.x + width, this.y + height, this.w, this.h);
+        }
+        if (this.x > width - this.w / 2 && this.y > this.h / 2) {
+            rect(this.x - width, this.y - height, this.w, this.h);
+        }
+        rect(this.x, this.y, this.w, this.h);
     }
 }
 
@@ -45,7 +59,6 @@ class QuadTree {
         this.points = [];
         this.divided = false;
         this.nested = nested;
-        this.maxNesting = Infinity;
     }
 
     subdivide() {
@@ -53,27 +66,19 @@ class QuadTree {
         let y = this.boundary.y;
         let w = this.boundary.w;
         let h = this.boundary.h;
-        let ne = new BoundingBox(x + w / 2, y - h / 2, w / 2, h / 2);
+        let ne = new Rectangle(x + w / 2, y - h / 2, w / 2, h / 2);
         this.northeast = new QuadTree(ne, this.capacity, this.nested + 1);
-        let nw = new BoundingBox(x - w / 2, y - h / 2, w / 2, h / 2);
+        let nw = new Rectangle(x - w / 2, y - h / 2, w / 2, h / 2);
         this.northwest = new QuadTree(nw, this.capacity, this.nested + 1);
-        let se = new BoundingBox(x + w / 2, y + h / 2, w / 2, h / 2);
+        let se = new Rectangle(x + w / 2, y + h / 2, w / 2, h / 2);
         this.southeast = new QuadTree(se, this.capacity, this.nested + 1);
-        let sw = new BoundingBox(x - w / 2, y + h / 2, w / 2, h / 2);
+        let sw = new Rectangle(x - w / 2, y + h / 2, w / 2, h / 2);
         this.southwest = new QuadTree(sw, this.capacity, this.nested + 1);
         this.divided = true;
     }
 
     insert(point) {
-        if (point.position === undefined) {
-            console.error('Point missing .position')
-            return false;
-        }
-        this.addToTree(new QuadPoint(point))
-    }
-
-    addToTree(point) {
-        if (!this.boundary.contains(point)) {
+        if (!this.boundary.contains(point.position)) {
             return false;
         }
 
@@ -81,31 +86,22 @@ class QuadTree {
             this.points.push(point);
             return true;
         } else {
-            if (this.nested > this.maxNesting) return true;
-
-            if (!this.divided) this.subdivide();
-
-            if (this.northeast.addToTree(point)) {
+            if (!this.divided) {
+                this.subdivide();
+            }
+            if (this.northeast.insert(point)) {
                 return true;
-            } else if (this.northwest.addToTree(point)) {
+            } else if (this.northwest.insert(point)) {
                 return true;
-            } else if (this.southeast.addToTree(point)) {
+            } else if (this.southeast.insert(point)) {
                 return true;
-            } else if (this.southwest.addToTree(point)) {
+            } else if (this.southwest.insert(point)) {
                 return true;
             }
         }
     }
 
-    query(range) {
-        if (!(range instanceof BoundingBox)) {
-            console.error('"BoundingBox" missing')
-            return false;
-        }
-        return this.getItemsInArea(range) || [];
-    }
-
-    getItemsInArea(range, found) {
+    query(range, found) {
         if (!found) {
             found = [];
         }
@@ -113,15 +109,15 @@ class QuadTree {
             return;
         } else {
             for (let i = 0; i < this.points.length; i++) {
-                if (range.contains(this.points[i])) {
-                    found.push(this.points[i].item);
+                if (range.contains(this.points[i].position)) {
+                    found.push(this.points[i]);
                 }
             }
             if (this.divided) {
-                this.northwest.getItemsInArea(range, found);
-                this.northeast.getItemsInArea(range, found);
-                this.southwest.getItemsInArea(range, found);
-                this.southeast.getItemsInArea(range, found);
+                this.northwest.query(range, found);
+                this.northeast.query(range, found);
+                this.southwest.query(range, found);
+                this.southeast.query(range, found);
             }
         }
         return found;
@@ -132,7 +128,7 @@ class QuadTree {
             found = [];
         }
         for (let i = 0; i < this.points.length; i++) {
-            found.push(this.points[i].item);
+            found.push(this.points[i]);
         }
         if (this.divided) {
             this.northwest.getEachItem(found);
@@ -145,7 +141,7 @@ class QuadTree {
 
     runEachItem(...items) {
         for (let i = 0; i < this.points.length; i++) {
-            this.points[i].item.run(...items);
+            this.points[i].run();
         }
         if (this.divided) {
             this.northwest.runEachItem(...items);
@@ -156,7 +152,34 @@ class QuadTree {
     }
 
     filterTree(parameter, condition) {
-        let filteredTemp = this.points.filter(e => e.item[parameter] !== condition);
+        const needsFilter = this.findCondition(parameter, condition);
+        if (needsFilter) {
+            const tempItems = this.getEachItem();
+            const boundary = new Rectangle(this.boundary.x, this.boundary.y, this.boundary.w, this.boundary.h)
+            let newTree = new QuadTree(boundary, this.capacity);
+
+
+            const filter = []
+            for (let i = 0; i < tempItems.length; i++) {
+                let e = tempItems[i];
+
+                if (e[parameter] === condition) {
+                    filter.push(e)
+                }
+            }
+
+            filter
+                .sort((a, b) => b.strength - a.strength)
+                .forEach(e => newTree.insert(e))
+
+            return newTree;
+        }
+        return this;
+    }
+
+    findCondition(parameter, condition) {
+        let filteredTemp = this.points.findIndex(e => e[parameter] !== condition);
+        if (filteredTemp !== -1) return true;
 
         if (this.divided) {
             this.northwest.filterTree(parameter, condition);
@@ -164,24 +187,9 @@ class QuadTree {
             this.southwest.filterTree(parameter, condition);
             this.southeast.filterTree(parameter, condition);
         }
-
-        if (filteredTemp.length === this.points.length) return this;
-
-        this.points = filteredTemp;
-        const tempItems = this.getEachItem()
-        let x = this.boundary.x;
-        let y = this.boundary.y;
-        let w = this.boundary.w;
-        let h = this.boundary.h;
-
-        let newTree = new QuadTree(new BoundingBox(x, y, w, h), this.capacity);
-        tempItems.forEach(e => newTree.insert(e))
-
-        return newTree;
     }
 
-
-    show() {
+    render() {
         push()
         stroke(255);
         noFill();
@@ -190,10 +198,10 @@ class QuadTree {
         rect(this.boundary.x, this.boundary.y, this.boundary.w * 2, this.boundary.h * 2);
 
         if (this.divided) {
-            this.northeast.show();
-            this.northwest.show();
-            this.southeast.show();
-            this.southwest.show();
+            this.northeast.render();
+            this.northwest.render();
+            this.southeast.render();
+            this.southwest.render();
         }
         pop()
     }
